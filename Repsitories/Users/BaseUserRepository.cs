@@ -33,8 +33,8 @@ using thZero.Responses.Users;
 namespace thZero.Repositories.Users
 {
     public abstract class BaseUserRepository<TRepository, TUserResponse, TUserData, TUserSetting, TPlanData> : BaseMongoDbRepository<TRepository, TUserData, BaseData>
-        where TUserResponse : BaseUserResponse<TUserData, TUserSetting>
-        where TUserData : BaseUserData<TUserSetting>
+        where TUserResponse : BaseUserResponse<TUserData, TUserSetting, TPlanData>
+        where TUserData : BaseUserData<TUserSetting, TPlanData>
         where TPlanData : BasePlanData
     {
         public BaseUserRepository(IOptions<MongoDbRepositoryConnectionConfiguration> config, ILogger<TRepository> logger) : base(config, logger)
