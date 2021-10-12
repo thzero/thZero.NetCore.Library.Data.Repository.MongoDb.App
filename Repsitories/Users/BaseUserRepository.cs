@@ -51,7 +51,7 @@ namespace thZero.Repositories.Users
 
             response.Results = await GetCollectionUsers().Find(filter => filter.Id.Equals(userId)).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).SingleOrDefaultAsync();
             if (response.Results == null)
-                return response;
+                return Error(response);
 
             if (!excludePlan)
             {
@@ -75,7 +75,7 @@ namespace thZero.Repositories.Users
             //response.Results = await GetCollectionUsers().Find(filter => filter.External.Id.Equals(externalUserId)).SingleOrDefaultAsync();
             response.Results = await GetCollectionUsers().Find(filter).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).SingleOrDefaultAsync();
             if (response.Results == null)
-                return response;
+                return Error(response);
 
             if (!excludePlan)
             {
@@ -111,7 +111,7 @@ namespace thZero.Repositories.Users
             // TODO: transaction
             response.Results = await collectionUsers.Find(filter => filter.Id.Equals(userId)).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).FirstOrDefaultAsync();
             if (response.Results == null)
-                return response;
+                return Error(response);
 
             response.Results = user;
             return response;
@@ -135,6 +135,8 @@ namespace thZero.Repositories.Users
             return Builders<TSource>.Projection
                 .Exclude(x => x._id)
                 .Exclude(x => x.External)
+                .Exclude(x => x.External.Email)
+                .Exclude(x => x.External.Picture)
                 .Exclude(x => x.Roles)
                 .Exclude(x => x.PlanId);
         }
@@ -143,7 +145,6 @@ namespace thZero.Repositories.Users
         {
             return Builders<TSource>.Projection
                 .Exclude(x => x._id)
-                .Exclude(x => x.External)
                 .Exclude(x => x.Roles)
                 .Exclude(x => x.PlanId);
         }
