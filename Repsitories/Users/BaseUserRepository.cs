@@ -25,6 +25,8 @@ using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
 
+using Nito.AsyncEx;
+
 using thZero.Data;
 using thZero.Data.Repository.MongoDb;
 using thZero.Instrumentation;
@@ -49,7 +51,7 @@ namespace thZero.Repositories.Users
 
             TUserResponse response = Instantiate(instrumentation);
 
-            response.Results = await GetCollectionUsers().Find(filter => filter.Id.Equals(userId)).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).SingleOrDefaultAsync();
+            response.Results = await GetCollectionUsers().Collection.Find(filter => filter.Id.Equals(userId)).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).SingleOrDefaultAsync();
             if (response.Results == null)
                 return Error(response);
 
@@ -58,7 +60,7 @@ namespace thZero.Repositories.Users
                 if ((response.Results == null) || ((response.Results != null) && String.IsNullOrEmpty(response.Results.PlanId)))
                     return Error(response, "Missing PlanId");
 
-                response.Results.Plan = await GetCollectionPlans().Find(filter => filter.Id.Equals(response.Results.PlanId)).Project<TPlanData>(DefaultProjectionBuilder<TPlanData>()).FirstOrDefaultAsync();
+                response.Results.Plan = await GetCollectionPlans().Collection.Find(filter => filter.Id.Equals(response.Results.PlanId)).Project<TPlanData>(DefaultProjectionBuilder<TPlanData>()).FirstOrDefaultAsync();
             }
 
             return response;
@@ -73,7 +75,7 @@ namespace thZero.Repositories.Users
 
             var filter = Builders<TUserData>.Filter.Eq(x => x.External.Id, externalUserId);
             //response.Results = await GetCollectionUsers().Find(filter => filter.External.Id.Equals(externalUserId)).SingleOrDefaultAsync();
-            response.Results = await GetCollectionUsers().Find(filter).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).SingleOrDefaultAsync();
+            response.Results = await GetCollectionUsers().Collection.Find(filter).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).SingleOrDefaultAsync();
             if (response.Results == null)
                 return Error(response);
 
@@ -82,7 +84,7 @@ namespace thZero.Repositories.Users
                 if ((response.Results == null) || ((response.Results != null) && String.IsNullOrEmpty(response.Results.PlanId)))
                     return Error(response, "Missing PlanId");
 
-                response.Results.Plan = await GetCollectionPlans().Find(filter => filter.Id.Equals(response.Results.PlanId)).Project<TPlanData>(DefaultProjectionBuilder<TPlanData>()).FirstOrDefaultAsync();
+                response.Results.Plan = await GetCollectionPlans().Collection.Find(filter => filter.Id.Equals(response.Results.PlanId)).Project<TPlanData>(DefaultProjectionBuilder<TPlanData>()).FirstOrDefaultAsync();
             }
 
             return response;
@@ -93,28 +95,81 @@ namespace thZero.Repositories.Users
             throw new NotImplementedException();
         }
 
+        private static readonly AsyncReaderWriterLock _mutex = new();
+
         public async Task<TUserResponse> UpdateFromExternalAsync(IInstrumentationPacket instrumentation, string userId, TUserData user)
         {
             Enforce.AgainstNull(() => instrumentation);
             Enforce.AgainstNullOrEmpty(() => userId);
             Enforce.AgainstNull(() => user);
 
-            TUserResponse response = Instantiate(instrumentation);
+            const string Declaration = "UpdateFromExternalAsync";
 
-            var collectionUsers = GetCollectionUsers();
+            try
+            {
+                TUserResponse response = Instantiate(instrumentation);
 
-            user.UpdatedTimestamp = thZero.Utilities.DateTime.Timestamp;
-            ReplaceOneResult results = await collectionUsers.ReplaceOneAsync(filter => filter.Id.Equals(userId), user, UpsertOptions);
-            if (results.ModifiedCount <= 0)
-                return Error(response, "Invalid user update.");
+                user.UpdatedTimestamp = thZero.Utilities.DateTime.Timestamp;
 
-            // TODO: transaction
-            response.Results = await collectionUsers.Find(filter => filter.Id.Equals(userId)).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).FirstOrDefaultAsync();
-            if (response.Results == null)
-                return Error(response);
+                var collectionUsers = GetCollectionUsers();
+                using (var session = collectionUsers.Client.StartSession())
+                {
+                    try
+                    {
+                        session.StartTransaction();
 
-            response.Results = user;
-            return response;
+                        // TODO: transaction
+                        var find = await collectionUsers.Collection.Find(filter => filter.Id.Equals(userId)).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).FirstOrDefaultAsync();
+                        if (find == null)
+                        {
+                            try
+                            {
+                                await collectionUsers.Collection.InsertOneAsync(user);
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogError2(Declaration, ex);
+                                {
+                                    session.AbortTransaction();
+                                    return Error(response, "Invalid user update.");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            ReplaceOneResult results = await collectionUsers.Collection.ReplaceOneAsync(filter => filter.Id.Equals(userId), user, UpsertOptions);
+                            if (results.ModifiedCount <= 0)
+                            {
+                                session.AbortTransaction();
+                                return Error(response, "Invalid user update.");
+                            }
+                        }
+
+                        // TODO: transaction
+                        response.Results = await collectionUsers.Collection.Find(filter => filter.Id.Equals(userId)).Project<TUserData>(DefaultProjectionBuilder<TUserData>()).FirstOrDefaultAsync();
+                        if (response.Results == null)
+                        {
+                            session.AbortTransaction();
+                            return Error(response);
+                        }
+
+                        session.CommitTransaction();
+
+                        response.Results = user;
+                        return response;
+                    }
+                    catch (Exception)
+                    {
+                        session.AbortTransaction();
+                        throw;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError2(Declaration, ex);
+                throw;
+            }
         }
 
         public async Task UpdateSettingsAsync(IInstrumentationPacket instrumentation, object requestedSettings)
@@ -124,8 +179,8 @@ namespace thZero.Repositories.Users
         #endregion
 
         #region Protected Methods
-        protected abstract IMongoCollection<TPlanData> GetCollectionPlans();
-        protected abstract IMongoCollection<TUserData> GetCollectionUsers();
+        protected abstract MongoCollectionResponse<TPlanData> GetCollectionPlans();
+        protected abstract MongoCollectionResponse<TUserData> GetCollectionUsers();
 
         protected abstract TUserResponse Instantiate(IInstrumentationPacket instrumentation);
 

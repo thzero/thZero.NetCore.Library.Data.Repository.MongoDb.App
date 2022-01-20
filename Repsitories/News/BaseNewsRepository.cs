@@ -48,7 +48,7 @@ namespace thZero.Repositories.News
         #endregion
 
         #region Protected Methods
-        protected abstract IMongoCollection<TNewsData> GetCollectionNews();
+        protected abstract MongoCollectionResponse<TNewsData> GetCollectionNews();
 
         protected abstract TNewsResponse InstantiateResponse(IInstrumentationPacket instrumentation);
         #endregion
