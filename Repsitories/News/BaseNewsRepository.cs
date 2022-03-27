@@ -23,8 +23,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-using MongoDB.Driver;
-
 using thZero.Data;
 using thZero.Data.Repository.MongoDb;
 using thZero.Instrumentation;
