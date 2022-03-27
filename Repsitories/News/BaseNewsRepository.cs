@@ -43,7 +43,8 @@ namespace thZero.Repositories.News
         #region Public Methods
         public async Task<TNewsResponse> LastestAsync(IInstrumentationPacket instrumentation, long timestamp)
         {
-            return InstantiateResponse(instrumentation); // TODO
+            TNewsResponse response = InstantiateResponse(instrumentation); // TODO
+            return await Task.FromResult(response);
         }
         #endregion
 
