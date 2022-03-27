@@ -95,8 +95,6 @@ namespace thZero.Repositories.Users
             throw new NotImplementedException();
         }
 
-        private static readonly AsyncReaderWriterLock _mutex = new();
-
         public async Task<TUserResponse> UpdateFromExternalAsync(IInstrumentationPacket instrumentation, string userId, TUserData user)
         {
             Enforce.AgainstNull(() => instrumentation);
@@ -203,6 +201,10 @@ namespace thZero.Repositories.Users
                 .Exclude(x => x.Roles)
                 .Exclude(x => x.PlanId);
         }
+        #endregion
+
+        #region Fields
+        private static readonly AsyncReaderWriterLock _mutex = new();
         #endregion
     }
 }
